@@ -1,6 +1,37 @@
+/**
+ * Copyright 2017 Orhan Obut
+ * <p>
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ * <p>
+ * http://www.apache.org/licenses/LICENSE-2.0
+ * <p>
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package com.orhanobut.logger;
 
-public class PrettyFormatStrategy implements FormatStrategy {
+import android.os.Environment;
+import android.os.Handler;
+import android.os.HandlerThread;
+
+import java.io.File;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Locale;
+
+/**
+ * Created by galois on 2017/11/20.
+ */
+
+public class TxtFormatStrategy implements FormatStrategy {
+    private static final String NEW_LINE = "\r\n";
+    private static final String SEPARATOR = " , ";
 
     /**
      * Android's max limit for a log entry is ~4076 bytes,
@@ -8,32 +39,23 @@ public class PrettyFormatStrategy implements FormatStrategy {
      * is UTF-8
      */
     private static final int CHUNK_SIZE = 4000;
-
     /**
      * The minimum stack trace index, starts at this class after two native calls.
      */
     private static final int MIN_STACK_OFFSET = 5;
 
-    /**
-     * Drawing toolbox
-     */
-    private static final char TOP_LEFT_CORNER = '┌';
-    private static final char BOTTOM_LEFT_CORNER = '└';
-    private static final char MIDDLE_CORNER = '├';
-    private static final char HORIZONTAL_LINE = '│';
-    private static final String DOUBLE_DIVIDER = "────────────────────────────────────────────────────────";
-    private static final String SINGLE_DIVIDER = "┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄";
-    private static final String TOP_BORDER = TOP_LEFT_CORNER + DOUBLE_DIVIDER + DOUBLE_DIVIDER;
-    private static final String BOTTOM_BORDER = BOTTOM_LEFT_CORNER + DOUBLE_DIVIDER + DOUBLE_DIVIDER;
-    private static final String MIDDLE_BORDER = MIDDLE_CORNER + SINGLE_DIVIDER + SINGLE_DIVIDER;
-
     private final int methodCount;
     private final int methodOffset;
     private final boolean showThreadInfo;
+
+    private final Date date;
+    private final SimpleDateFormat dateFormat;
     private final LogStrategy logStrategy;
     private final String tag;
 
-    private PrettyFormatStrategy(Builder builder) {
+    private TxtFormatStrategy(Builder builder) {
+        date = builder.date;
+        dateFormat = builder.dateFormat;
         methodCount = builder.methodCount;
         methodOffset = builder.methodOffset;
         showThreadInfo = builder.showThreadInfo;
@@ -47,43 +69,56 @@ public class PrettyFormatStrategy implements FormatStrategy {
 
     @Override
     public void log(int priority, String onceOnlyTag, String message) {
+        logNewLine(priority, tag);
+
         String tag = formatTag(onceOnlyTag);
 
-        logTopBorder(priority, tag);
+        date.setTime(System.currentTimeMillis());
+
+        StringBuilder builder = new StringBuilder();
+
+        // machine-readable date/time
+        builder.append(Long.toString(date.getTime()));
+
+        // human-readable date/time
+        builder.append(SEPARATOR);
+        builder.append(dateFormat.format(date));
+
+        // level
+        builder.append(SEPARATOR);
+        builder.append(Utils.logLevel(priority));
+
+        // tag
+        builder.append(SEPARATOR);
+        builder.append(tag);
+
+        builder.append(SEPARATOR);
+        builder.append(message);
+
         logHeaderContent(priority, tag, methodCount);
 
         //get bytes of message with system's default charset (which is UTF-8 for Android)
-        byte[] bytes = message.getBytes();
+        String msg = builder.toString();
+        byte[] bytes = msg.getBytes();
         int length = bytes.length;
         if (length <= CHUNK_SIZE) {
-            if (methodCount > 0) {
-                logDivider(priority, tag);
-            }
-            logContent(priority, tag, message);
-            logBottomBorder(priority, tag);
+            logContent(priority, tag, msg);
             return;
+        } else {
+            for (int i = 0; i < length; i += CHUNK_SIZE) {
+                int count = Math.min(length - i, CHUNK_SIZE);
+                //create a new String with system's default charset (which is UTF-8 for Android)
+                logContent(priority, tag, new String(bytes, i, count));
+            }
         }
-        if (methodCount > 0) {
-            logDivider(priority, tag);
-        }
-        for (int i = 0; i < length; i += CHUNK_SIZE) {
-            int count = Math.min(length - i, CHUNK_SIZE);
-            //create a new String with system's default charset (which is UTF-8 for Android)
-            logContent(priority, tag, new String(bytes, i, count));
-        }
-        logBottomBorder(priority, tag);
-    }
-
-    private void logTopBorder(int logType, String tag) {
-        logChunk(logType, tag, TOP_BORDER);
+        logNewLine(priority, tag);
     }
 
     @SuppressWarnings("StringBufferReplaceableByString")
     private void logHeaderContent(int logType, String tag, int methodCount) {
         StackTraceElement[] trace = Thread.currentThread().getStackTrace();
         if (showThreadInfo) {
-            logChunk(logType, tag, HORIZONTAL_LINE + " Thread: " + Thread.currentThread().getName());
-            logDivider(logType, tag);
+            logChunk(logType, tag, " Thread: " + Thread.currentThread().getName());
         }
         String level = "";
 
@@ -100,8 +135,8 @@ public class PrettyFormatStrategy implements FormatStrategy {
                 continue;
             }
             StringBuilder builder = new StringBuilder();
-            builder.append(HORIZONTAL_LINE)
-                    .append(' ')
+            builder
+                    .append(" - ")
                     .append(level)
                     .append(getSimpleClassName(trace[stackIndex].getClassName()))
                     .append(".")
@@ -115,20 +150,17 @@ public class PrettyFormatStrategy implements FormatStrategy {
             level += "   ";
             logChunk(logType, tag, builder.toString());
         }
+        logNewLine(logType, tag);
     }
 
-    private void logBottomBorder(int logType, String tag) {
-        logChunk(logType, tag, BOTTOM_BORDER);
-    }
-
-    private void logDivider(int logType, String tag) {
-        logChunk(logType, tag, MIDDLE_BORDER);
+    private void logNewLine(int logType, String tag) {
+        logChunk(logType, tag, NEW_LINE);
     }
 
     private void logContent(int logType, String tag, String chunk) {
         String[] lines = chunk.split(System.getProperty("line.separator"));
         for (String line : lines) {
-            logChunk(logType, tag, HORIZONTAL_LINE + " " + line);
+            logChunk(logType, tag, " " + line + NEW_LINE);
         }
     }
 
@@ -165,14 +197,28 @@ public class PrettyFormatStrategy implements FormatStrategy {
         return this.tag;
     }
 
-    public static class Builder {
-        int methodCount = 2;
+    public static final class Builder {
+        private static final int MAX_BYTES = 500 * 1024;
+
+        Date date;
+        SimpleDateFormat dateFormat;
+        int methodCount = 1;
         int methodOffset = 0;
         boolean showThreadInfo = true;
         LogStrategy logStrategy;
         String tag = "PRETTY_LOGGER";
 
         private Builder() {
+        }
+
+        public Builder date(Date val) {
+            date = val;
+            return this;
+        }
+
+        public Builder dateFormat(SimpleDateFormat val) {
+            dateFormat = val;
+            return this;
         }
 
         public Builder methodCount(int val) {
@@ -200,12 +246,25 @@ public class PrettyFormatStrategy implements FormatStrategy {
             return this;
         }
 
-        public PrettyFormatStrategy build() {
-            if (logStrategy == null) {
-                logStrategy = new LogcatLogStrategy();
+        public TxtFormatStrategy build() {
+            if (date == null) {
+                date = new Date();
             }
-            return new PrettyFormatStrategy(this);
+            if (dateFormat == null) {
+                dateFormat = new SimpleDateFormat("yyyy.MM.dd HH:mm:ss.SSS", Locale.CHINA);
+            }
+            if (logStrategy == null) {
+                String diskPath = Environment.getExternalStorageDirectory().getAbsolutePath();
+                SimpleDateFormat simpleDateFormat = new SimpleDateFormat("yyyyMMdd", Locale.CHINA);
+                Date d = new Date(System.currentTimeMillis());
+                String folder = diskPath + File.separatorChar + "logger" + File.separatorChar + simpleDateFormat.format(d);
+
+                HandlerThread ht = new HandlerThread("AndroidFileLogger." + folder);
+                ht.start();
+                Handler handler = new DiskTxtLogStrategy.WriteHandler(ht.getLooper(), folder, MAX_BYTES);
+                logStrategy = new DiskTxtLogStrategy(handler);
+            }
+            return new TxtFormatStrategy(this);
         }
     }
-
 }

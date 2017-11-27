@@ -45,12 +45,14 @@ public class DiskTxtLogStrategy implements LogStrategy {
 
     static class WriteHandler extends Handler {
 
-        private final String folder;
+        private final String folderName;
         private final int maxFileSize;
+        private final String fileName;
 
-        WriteHandler(Looper looper, String folder, int maxFileSize) {
+        WriteHandler(Looper looper, String folder, String name, int maxFileSize) {
             super(looper);
-            this.folder = folder;
+            this.folderName = folder;
+            this.fileName = name;
             this.maxFileSize = maxFileSize;
         }
 
@@ -60,7 +62,7 @@ public class DiskTxtLogStrategy implements LogStrategy {
             String content = (String) msg.obj;
 
             FileWriter fileWriter = null;
-            File logFile = getLogFile(folder, "logs");
+            File logFile = getLogFile();
 
             try {
                 fileWriter = new FileWriter(logFile, true);
@@ -90,7 +92,7 @@ public class DiskTxtLogStrategy implements LogStrategy {
             fileWriter.append(content);
         }
 
-        private File getLogFile(String folderName, String fileName) {
+        private File getLogFile() {
 
             File folder = new File(folderName);
             if (!folder.exists()) {

@@ -63,6 +63,11 @@ public class TxtFormatStrategy implements FormatStrategy {
         tag = builder.tag;
     }
 
+    /**
+     * builder 可以指定目录和文件名，供不同 app 使用
+     *
+     * @return builder
+     */
     public static Builder newBuilder() {
         return new Builder();
     }
@@ -198,7 +203,7 @@ public class TxtFormatStrategy implements FormatStrategy {
     }
 
     public static final class Builder {
-        private static final int MAX_BYTES = 500 * 1024;
+        private static final int MAX_BYTES = 50 * 1024 * 1024;
 
         Date date;
         SimpleDateFormat dateFormat;
@@ -207,8 +212,11 @@ public class TxtFormatStrategy implements FormatStrategy {
         boolean showThreadInfo = true;
         LogStrategy logStrategy;
         String tag = "PRETTY_LOGGER";
+        String folder;
+        String name;
 
         private Builder() {
+            setDefaultFolderAndName();
         }
 
         public Builder date(Date val) {
@@ -246,6 +254,24 @@ public class TxtFormatStrategy implements FormatStrategy {
             return this;
         }
 
+        public Builder folder(String val) {
+            this.folder = val;
+            return this;
+        }
+
+        public Builder name(String val) {
+            this.name = val;
+            return this;
+        }
+
+        private void setDefaultFolderAndName() {
+            String diskPath = Environment.getExternalStorageDirectory().getAbsolutePath();
+            SimpleDateFormat simpleDateFormat = new SimpleDateFormat("yyyyMMdd", Locale.CHINA);
+            Date d = new Date(System.currentTimeMillis());
+            this.folder = diskPath + File.separatorChar + "logger" + File.separatorChar + simpleDateFormat.format(d);
+            this.name = "log";
+        }
+
         public TxtFormatStrategy build() {
             if (date == null) {
                 date = new Date();
@@ -254,14 +280,9 @@ public class TxtFormatStrategy implements FormatStrategy {
                 dateFormat = new SimpleDateFormat("yyyy.MM.dd HH:mm:ss.SSS", Locale.CHINA);
             }
             if (logStrategy == null) {
-                String diskPath = Environment.getExternalStorageDirectory().getAbsolutePath();
-                SimpleDateFormat simpleDateFormat = new SimpleDateFormat("yyyyMMdd", Locale.CHINA);
-                Date d = new Date(System.currentTimeMillis());
-                String folder = diskPath + File.separatorChar + "logger" + File.separatorChar + simpleDateFormat.format(d);
-
                 HandlerThread ht = new HandlerThread("AndroidFileLogger." + folder);
                 ht.start();
-                Handler handler = new DiskTxtLogStrategy.WriteHandler(ht.getLooper(), folder, MAX_BYTES);
+                Handler handler = new DiskTxtLogStrategy.WriteHandler(ht.getLooper(), folder, name, MAX_BYTES);
                 logStrategy = new DiskTxtLogStrategy(handler);
             }
             return new TxtFormatStrategy(this);
